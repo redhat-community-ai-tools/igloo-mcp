@@ -1,0 +1,67 @@
+{
+    "fusionQueryId": "52ec4bc0-2041-45c2-9c0e-f0b725912e95",
+    "results": [
+        {
+            "id": "e71e78b3-bf38-476c-a7b9-acae80992873",
+            "objectType": "blogArticle",
+            "title": "August 2025 - Test",
+            "applicationType": "blog",
+            "href": "/blogs/august/test",
+            "content": "Content",
+            "contentFull": "",
+            "description": "Test description",
+            "createdById": "9ba95875-e71e-4fc4-b9d6-ca8552baf761",
+            "createdByFullName": "Michael Yochpaz",
+            "createdByNamespace": "myochpaz",
+            "modifiedDate": "2025-09-05T18:19:09.07-04:00",
+            "lastModifiedByFullName": "Michael Yochpaz",
+            "lastModifiedByNamespace": "myochpaz",
+            "numberOfComments": 0,
+            "numberOfViews": 10,
+            "numberOfLikes": 0,
+            "isArchived": false,
+            "isRecommended": false,
+            "labels": {},
+            "fileFormat": null,
+            "documentExtension": "",
+            "highlights": {
+                "title": [
+                    "August 2025 - <strong class=\"highlight\">Test</strong>"
+                ]            },
+            "calendarStartDate": "0001-01-01T00:00:00",
+            "calendarEndDate": "0001-01-01T00:00:00",
+            "calendarInstanceDate": "0001-01-01T00:00:00",
+            "calendarStartDateUTC": "0001-01-01T00:00:00",
+            "calendarEndDateUTC": "0001-01-01T00:00:00",
+            "calendarInstanceDateUTC": "0001-01-01T00:00:00",
+            "calendarRecurrenceEndDateUTC": "0001-01-01T00:00:00",
+            "calendarTimezoneKey": 0,
+            "calendarRecurrenceFrequencyType": "unknown",
+            "calendarRecurrenceMonth": "unknown",
+            "calendarRecurrenceRelativeOccurence": "unknown",
+            "calendarRecurrenceInterval": 0,
+            "calendarRecurrenceVariant": 0,
+            "calendarRecurrenceEndDate": "0001-01-01T00:00:00",
+            "calendarRecurrenceCount": 0,
+            "calendarLocation": null,
+            "calendarIsAllDayEvent": false,
+            "keywords": {
+                "en": []
+            }
+        }
+    ],
+    "numFound": 6,
+    "facetFields": {},
+    "appliedFilters": [
+        {
+            "type": "updatedDateType",
+            "name": "PastMonth",
+            "id": [
+                "2025-08-14T06:03:39.1836301-04:00",
+                "2025-09-14T06:03:39.1836301-04:00"
+            ]
+        }
+    ],
+    "spellCheckRecommendedQuery": null,
+    "spellCheckRecommendedQueryHits": 0
+}

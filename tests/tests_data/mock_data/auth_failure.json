@@ -1,0 +1,37 @@
+{
+    "minRequestPeriod": 0,
+    "requestSupportCode": 698233413207261294,
+    "exception": {
+        "statusCode": 422,
+        "type": "Validation_ReportInvalidInput",
+        "errorId": 49763,
+        "message": "Your request failed due to invalid parameters.",
+        "errorTags": "Validation, BadUserInput",
+        "dataTokens": [],
+        "errorList": [
+            {
+                "statusCode": 422,
+                "type": "Validation_ParameterInvalid",
+                "errorId": 888151,
+                "message": "A parameter is present but invalid.",
+                "errorTags": "Validation, BadUserInput",
+                "dataTokensId": 4,
+                "dataTokens": [
+                    {
+                        "name": "InputFormat",
+                        "value": "Guid"
+                    },
+                    {
+                        "name": "ParameterName",
+                        "value": "appId",
+                        "isLiteral": true
+                    }
+                ],
+                "timestamp": "\/Date(1757844530774-0400)\/"
+            }
+        ],
+        "timestamp": "\/Date(1757844530774-0400)\/"
+    },
+    "dictionary": null,
+    "response": null
+}

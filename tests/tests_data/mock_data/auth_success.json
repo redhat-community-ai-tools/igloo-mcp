@@ -1,0 +1,18 @@
+{
+    "minRequestPeriod": 0,
+    "requestSupportCode": 638964490150021941,
+    "dictionary": null,
+    "response": {
+        "__type": "Session:http:\/\/schemas.iglooplatform.com\/Igloo.Old.Common",
+        "applicationId": "4d563f6e-b9c4-4372-9114-4130a6075dce",
+        "communityId": "6af35e09-e371-4903-a4e6-d9cc9d4e3953",
+        "userId": "ac94442a-be8c-4a8d-80a0-9fbc870b9943",
+        "secretKey": "618c5ed8-e265-401e-8609-dbfacd02b0b0",
+        "sessionKey": "cc2ba556-6d29-4091-96ce-eca12e3cbe3c",
+        "baseUri": "https:\/\/test.com\/.api\/api.svc\/",
+        "baseUriHttps": "https:\/\/test.com\/.api\/api.svc\/",
+        "customSessionKey": "",
+        "authInstance": null,
+        "tenantId": "TID"
+    }
+}

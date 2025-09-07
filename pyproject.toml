@@ -1,0 +1,30 @@
+[project]
+name = "igloo-mcp"
+version = "1.0.0"
+description = "An unofficial MCP server for Igloo - a workspace intranet platform."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.28.1",
+    "mcp[cli]>=1.13.1",
+    "pydantic-settings>=2.10.1",
+]
+
+[project.scripts]
+igloo-mcp = "igloo_mcp.main:main"
+
+[tool.uv]
+package = true
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.2",
+    "pytest-asyncio>=1.2.0",
+    "pytest-mock>=3.15.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = [
+  "."
+]
