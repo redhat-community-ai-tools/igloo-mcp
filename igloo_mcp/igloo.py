@@ -240,3 +240,68 @@ class IglooClient:
             return results[:limit]
         
         return results
+
+    def _validate_community_url(self, url: str) -> None:
+        """
+        Validate that a URL belongs to the configured community.
+
+        Args:
+            url: The URL to validate.
+
+        Raises:
+            ValueError: If the URL does not belong to the configured community.
+        """
+        is_valid = (
+            url == self.community
+            or url.startswith(f"{self.community}/")
+            or url.startswith(f"{self.community}?")
+        )
+        if not is_valid:
+            raise ValueError(
+                f"URL must belong to community '{self.community}'. Got: {url}"
+            )
+
+    async def fetch_page(self, url: str) -> str:
+        """
+        Fetch a single page from the Igloo community.
+
+        Args:
+            url: The full URL of the page to fetch.
+                Must belong to the configured community domain.
+
+        Returns:
+            str: The HTML content of the page.
+
+        Raises:
+            ValueError: If the URL does not belong to the configured community.
+            httpx.HTTPStatusError: If the HTTP request fails with an error status.
+            httpx.TimeoutException: If the request times out.
+        """
+        self._validate_community_url(url)
+        response = await self._client.request(
+            method="GET",
+            url=url,
+            headers={"Accept": "text/html"},
+        )
+        response.raise_for_status()
+        return response.text
+
+    async def fetch_pages(self, urls: list[str]) -> list[str | BaseException]:
+        """
+        Fetch multiple pages from the Igloo community concurrently.
+
+        This method fetches multiple frontend HTML pages concurrently using asyncio.gather().
+        Exceptions are collected rather than raised, allowing partial success.
+
+        Args:
+            urls: List of full URLs of the pages to fetch.
+                Each URL must belong to the configured community domain.
+
+        Returns:
+            list[str | BaseException]: List of results in the same order as input URLs.
+                Each element is either the HTML content (str) or a BaseException if fetch failed.
+                Caller should use isinstance() to check for exceptions.
+        """
+        tasks = [self.fetch_page(url) for url in urls]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        return list(results)

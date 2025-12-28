@@ -1,7 +1,10 @@
 """Formatter for search results to create token-efficient, human-readable output."""
 
 from datetime import datetime
-from typing import Any
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from igloo_mcp.converter import TruncationMetadata
 
 
 def format_search_results(
@@ -163,3 +166,103 @@ def _truncate_text(text: str, max_length: int = 200) -> str:
     
     truncated = text[:max_length].rsplit(" ", 1)[0]
     return f"{truncated}..."
+
+
+def format_fetch_result(
+    url: str,
+    markdown: str,
+    start_index: int | None = None,
+) -> str:
+    """
+    Format the fetch result for LLM consumption.
+
+    Args:
+        url: The URL that was fetched.
+        markdown: The converted Markdown content.
+        start_index: Character offset if reading from a continuation point.
+            When provided, adds position context to the header.
+
+    Returns:
+        Formatted string with URL header and Markdown content.
+    """
+    header_parts = ["# Fetched Content", "", f"URL: {url}"]
+    
+    if start_index is not None and start_index > 0:
+        header_parts.append(f"Reading from offset: {start_index:,}")
+    
+    header_parts.extend(["", "---", "", ""])
+    header = "\n".join(header_parts)
+    return header + markdown
+
+
+def format_fetch_results(results: list[dict[str, str]], total_count: int) -> str:
+    """
+    Format multiple fetch results for LLM consumption.
+
+    Each page is formatted with a clear header showing its position and URL,
+    with separators between pages for easy reading.
+
+    Args:
+        results: List of dictionaries with 'url', 'markdown' (content), and optionally 'error'.
+        total_count: Total number of pages being fetched (for display in headers).
+
+    Returns:
+        Formatted string with all pages concatenated with clear separators.
+    """
+    if not results:
+        return "No pages to display."
+
+    formatted_parts = []
+    
+    for i, result in enumerate(results, start=1):
+        url = result.get("url", "Unknown URL")
+        markdown = result.get("markdown", "")
+        error = result.get("error")
+        
+        header = f"===== PAGE {i} of {total_count} =====\nURL: {url}\n"
+        
+        if error:
+            content = f"\n[Error fetching page: {error}]\n"
+        else:
+            content = f"\n{markdown}\n"
+        
+        formatted_parts.append(header + content)
+    
+    return "\n".join(formatted_parts)
+
+
+def format_truncation_metadata(metadata: "TruncationMetadata", url: str) -> str:
+    """
+    Format truncation metadata with clear instructions for continuation.
+    
+    Output format optimized for LLM comprehension with:
+    - Visual warning indicator for truncation
+    - Percentage showing document completeness
+    - Clear action instructions for continuation
+    """
+    # Calculate percentage with divide-by-zero protection
+    pct = int(100 * metadata.chars_returned / metadata.chars_total) if metadata.chars_total > 0 else 0
+    
+    lines = [
+        "",
+        "---",
+        "",
+        "⚠️ CONTENT TRUNCATED",
+        f"Showing {metadata.chars_returned:,} of {metadata.chars_total:,} chars ({pct}% of document)",
+    ]
+    
+    if metadata.current_path:
+        lines.append(f"Current section: {metadata.current_path}")
+    
+    if metadata.remaining_sections:
+        sections_str = ", ".join(metadata.remaining_sections)
+        lines.append(f"Upcoming sections: {sections_str}")
+    
+    if metadata.next_start_index is not None:
+        lines.extend([
+            "",
+            "To continue reading, call fetch with start_index:",
+            f'  fetch(url="{url}", start_index={metadata.next_start_index})',
+        ])
+    
+    return "\n".join(lines)

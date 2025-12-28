@@ -1,35 +1,33 @@
+"""Tests for the sorting module."""
+
 import json
+from typing import Any
+
 import pytest
 from pathlib import Path
 from igloo_mcp.sorting import sort_results
 
 
-@pytest.fixture
-def mock_data_path() -> Path:
-    """Returns path to mock data directory."""
-    return Path(__file__).parent / "tests_data" / "mock_data"
+# Note: mock_data_path fixture is defined in conftest.py
 
 
 @pytest.fixture
-def sample_results(mock_data_path: Path) -> list[dict]:
-    """Load and transform sample search results for sorting tests."""
+def sample_results(mock_data_path: Path) -> list[dict[str, Any]]:
+    """Load and transform sample search results for sorting tests.
+    
+    Uses a subset of fields relevant to sorting (id and views_count).
+    """
     with open(mock_data_path / "search_single_page.json", "r") as f:
         mock_data = json.load(f)
-    return _transform_raw_results(mock_data["results"])
-
-
-def _transform_raw_results(raw_results: list[dict]) -> list[dict]:
-    """
-    Transforms raw search results from the mock file into the format
-    expected by the application's internal functions.
-    """
+    
+    # Transform to include only sorting-relevant fields
     fields_mapping = {
         "id": "id",
         "numberOfViews": "views_count",
     }
     return [
         {fields_mapping[key]: value for key, value in item.items() if key in fields_mapping}
-        for item in raw_results
+        for item in mock_data["results"]
     ]
 
 

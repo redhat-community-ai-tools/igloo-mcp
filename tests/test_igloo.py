@@ -733,3 +733,737 @@ async def test_search_concurrent_request_partial_failure(
     
     with pytest.raises(httpx.HTTPStatusError):
         await client.search(query="Test", pagination_page_size=2)
+
+
+# ============================================================================
+# Fetch Page Tests
+# ============================================================================
+
+
+async def test_fetch_page_success(client: IglooClient, mocker: MockerFixture):
+    """
+    Test successful page fetch returns HTML content.
+    
+    Verifies that:
+    - GET request is made with correct URL
+    - Accept header is set to text/html
+    - HTML content is returned as string
+    """
+    html_content = "<html><body><p>Test content</p></body></html>"
+    request = Request(method="GET", url=f"{BASE_URL}/wiki/test-page")
+    mock_response = Response(200, content=html_content.encode(), request=request)
+    mock_request = mocker.patch.object(
+        client._client, "request", return_value=mock_response, new_callable=mocker.AsyncMock
+    )
+
+    result = await client.fetch_page(f"{BASE_URL}/wiki/test-page")
+
+    assert result == html_content
+    mock_request.assert_called_once_with(
+        method="GET",
+        url=f"{BASE_URL}/wiki/test-page",
+        headers={"Accept": "text/html"},
+    )
+
+
+async def test_fetch_page_invalid_url(client: IglooClient):
+    """
+    Test fetch with URL not belonging to community raises ValueError.
+    
+    Verifies that:
+    - ValueError is raised for external URLs
+    - Error message indicates the URL must belong to the community
+    """
+    with pytest.raises(ValueError, match="URL must belong to community"):
+        await client.fetch_page("https://other-site.com/page")
+
+
+async def test_fetch_page_invalid_url_similar_domain(client: IglooClient):
+    """
+    Test fetch with similar but different domain raises ValueError.
+    
+    Verifies that:
+    - URLs that start similarly but are not exact matches are rejected
+    - Security check is strict
+    """
+    with pytest.raises(ValueError, match="URL must belong to community"):
+        await client.fetch_page("https://test.com.evil.com/page")
+
+
+async def test_fetch_page_http_404(client: IglooClient, mocker: MockerFixture):
+    """
+    Test fetch handles HTTP 404 Not Found error.
+    
+    Verifies that:
+    - HTTPStatusError is raised for 404 responses
+    - Error propagates for caller to handle
+    """
+    request = Request(method="GET", url=f"{BASE_URL}/wiki/not-found")
+    mock_response = Response(404, content=b"Not Found", request=request)
+    mocker.patch.object(
+        client._client, "request", return_value=mock_response, new_callable=mocker.AsyncMock
+    )
+
+    with pytest.raises(httpx.HTTPStatusError) as exc_info:
+        await client.fetch_page(f"{BASE_URL}/wiki/not-found")
+    
+    assert exc_info.value.response.status_code == 404
+
+
+async def test_fetch_page_http_500(client: IglooClient, mocker: MockerFixture):
+    """
+    Test fetch handles HTTP 500 Internal Server Error.
+    
+    Verifies that:
+    - HTTPStatusError is raised for 500 responses
+    - Server errors propagate correctly
+    """
+    request = Request(method="GET", url=f"{BASE_URL}/wiki/error-page")
+    mock_response = Response(500, content=b"Internal Server Error", request=request)
+    mocker.patch.object(
+        client._client, "request", return_value=mock_response, new_callable=mocker.AsyncMock
+    )
+
+    with pytest.raises(httpx.HTTPStatusError) as exc_info:
+        await client.fetch_page(f"{BASE_URL}/wiki/error-page")
+    
+    assert exc_info.value.response.status_code == 500
+
+
+async def test_fetch_page_timeout(client: IglooClient, mocker: MockerFixture):
+    """
+    Test fetch handles timeout errors.
+    
+    Verifies that:
+    - TimeoutException is raised when request times out
+    - Timeout errors propagate for retry logic
+    """
+    mocker.patch.object(
+        client._client,
+        "request",
+        side_effect=httpx.TimeoutException("Request timeout"),
+        new_callable=mocker.AsyncMock
+    )
+
+    with pytest.raises(httpx.TimeoutException):
+        await client.fetch_page(f"{BASE_URL}/wiki/slow-page")
+
+
+async def test_fetch_page_connection_error(client: IglooClient, mocker: MockerFixture):
+    """
+    Test fetch handles connection errors.
+    
+    Verifies that:
+    - ConnectError is raised when connection fails
+    - Network errors propagate correctly
+    """
+    mocker.patch.object(
+        client._client,
+        "request",
+        side_effect=httpx.ConnectError("Connection refused"),
+        new_callable=mocker.AsyncMock
+    )
+
+    with pytest.raises(httpx.ConnectError):
+        await client.fetch_page(f"{BASE_URL}/wiki/unreachable-page")
+
+
+async def test_fetch_page_with_path(client: IglooClient, mocker: MockerFixture):
+    """
+    Test fetch works with various URL paths.
+    
+    Verifies that:
+    - URLs with different paths are handled correctly
+    - Full URL is passed to the request
+    """
+    html_content = "<html><body><h1>Blog Post</h1></body></html>"
+    request = Request(method="GET", url=f"{BASE_URL}/blog/2024/01/my-post")
+    mock_response = Response(200, content=html_content.encode(), request=request)
+    mocker.patch.object(
+        client._client, "request", return_value=mock_response, new_callable=mocker.AsyncMock
+    )
+
+    result = await client.fetch_page(f"{BASE_URL}/blog/2024/01/my-post")
+
+    assert result == html_content
+
+
+async def test_fetch_page_with_query_params(client: IglooClient, mocker: MockerFixture):
+    """
+    Test fetch handles URLs with query parameters.
+    
+    Verifies that:
+    - Query parameters are preserved in the request
+    - Full URL including params is passed correctly
+    """
+    html_content = "<html><body>Search results</body></html>"
+    url = f"{BASE_URL}/search?q=test&page=2"
+    request = Request(method="GET", url=url)
+    mock_response = Response(200, content=html_content.encode(), request=request)
+    mocker.patch.object(
+        client._client, "request", return_value=mock_response, new_callable=mocker.AsyncMock
+    )
+
+    result = await client.fetch_page(url)
+
+    assert result == html_content
+
+
+async def test_fetch_page_unicode_content(client: IglooClient, mocker: MockerFixture):
+    """
+    Test fetch handles Unicode content correctly.
+    
+    Verifies that:
+    - Unicode characters are preserved in the response
+    - Non-ASCII content is handled correctly
+    """
+    html_content = "<html><body><p>日本語テキスト</p><p>Ελληνικά</p></body></html>"
+    request = Request(method="GET", url=f"{BASE_URL}/wiki/unicode-page")
+    mock_response = Response(200, content=html_content.encode('utf-8'), request=request)
+    mocker.patch.object(
+        client._client, "request", return_value=mock_response, new_callable=mocker.AsyncMock
+    )
+
+    result = await client.fetch_page(f"{BASE_URL}/wiki/unicode-page")
+
+    assert "日本語テキスト" in result
+    assert "Ελληνικά" in result
+
+
+async def test_fetch_page_empty_response(client: IglooClient, mocker: MockerFixture):
+    """
+    Test fetch handles empty response body.
+    
+    Verifies that:
+    - Empty string is returned for empty response
+    - No error occurs with empty content
+    """
+    request = Request(method="GET", url=f"{BASE_URL}/wiki/empty-page")
+    mock_response = Response(200, content=b"", request=request)
+    mocker.patch.object(
+        client._client, "request", return_value=mock_response, new_callable=mocker.AsyncMock
+    )
+
+    result = await client.fetch_page(f"{BASE_URL}/wiki/empty-page")
+
+    assert result == ""
+
+
+async def test_fetch_page_large_content(client: IglooClient, mocker: MockerFixture):
+    """
+    Test fetch handles large HTML content.
+    
+    Verifies that:
+    - Large responses are handled without error
+    - Content is returned in full
+    """
+    html_content = "<html><body>" + "<p>Content</p>" * 10000 + "</body></html>"
+    request = Request(method="GET", url=f"{BASE_URL}/wiki/large-page")
+    mock_response = Response(200, content=html_content.encode(), request=request)
+    mocker.patch.object(
+        client._client, "request", return_value=mock_response, new_callable=mocker.AsyncMock
+    )
+
+    result = await client.fetch_page(f"{BASE_URL}/wiki/large-page")
+
+    assert len(result) == len(html_content)
+    assert result == html_content
+
+
+# ============================================================================
+# Fetch Pages (Multiple URLs) Tests
+# ============================================================================
+
+
+async def test_fetch_pages_success(client: IglooClient, mocker: MockerFixture):
+    """
+    Test successful fetching of multiple pages returns all HTML content.
+    
+    Verifies that:
+    - All pages are fetched concurrently
+    - Results are returned in same order as input URLs
+    - Each result is the HTML content string
+    """
+    html_content_1 = "<html><body><p>Page 1</p></body></html>"
+    html_content_2 = "<html><body><p>Page 2</p></body></html>"
+    html_content_3 = "<html><body><p>Page 3</p></body></html>"
+    
+    request1 = Request(method="GET", url=f"{BASE_URL}/wiki/page1")
+    request2 = Request(method="GET", url=f"{BASE_URL}/wiki/page2")
+    request3 = Request(method="GET", url=f"{BASE_URL}/wiki/page3")
+    
+    mock_response_1 = Response(200, content=html_content_1.encode(), request=request1)
+    mock_response_2 = Response(200, content=html_content_2.encode(), request=request2)
+    mock_response_3 = Response(200, content=html_content_3.encode(), request=request3)
+    
+    mocker.patch.object(
+        client._client,
+        "request",
+        side_effect=[mock_response_1, mock_response_2, mock_response_3],
+        new_callable=mocker.AsyncMock
+    )
+
+    urls = [
+        f"{BASE_URL}/wiki/page1",
+        f"{BASE_URL}/wiki/page2",
+        f"{BASE_URL}/wiki/page3",
+    ]
+    results = await client.fetch_pages(urls)
+
+    assert len(results) == 3
+    assert results[0] == html_content_1
+    assert results[1] == html_content_2
+    assert results[2] == html_content_3
+
+
+async def test_fetch_pages_empty_list(client: IglooClient, mocker: MockerFixture):
+    """
+    Test fetching with empty URL list returns empty results.
+    
+    Verifies that:
+    - Empty list input returns empty list output
+    - No errors occur with empty input
+    """
+    results = await client.fetch_pages([])
+    
+    assert results == []
+
+
+async def test_fetch_pages_single_url(client: IglooClient, mocker: MockerFixture):
+    """
+    Test fetching single URL via fetch_pages works correctly.
+    
+    Verifies that:
+    - Single URL is processed correctly
+    - Result is the HTML content string
+    """
+    html_content = "<html><body><p>Single Page</p></body></html>"
+    request = Request(method="GET", url=f"{BASE_URL}/wiki/single")
+    mock_response = Response(200, content=html_content.encode(), request=request)
+    
+    mocker.patch.object(
+        client._client,
+        "request",
+        return_value=mock_response,
+        new_callable=mocker.AsyncMock
+    )
+
+    results = await client.fetch_pages([f"{BASE_URL}/wiki/single"])
+
+    assert len(results) == 1
+    assert results[0] == html_content
+
+
+async def test_fetch_pages_invalid_url(client: IglooClient, mocker: MockerFixture):
+    """
+    Test fetching with invalid URL returns ValueError exception.
+    
+    Verifies that:
+    - Invalid URLs return ValueError exception in result
+    - Error message indicates URL must belong to community
+    """
+    results = await client.fetch_pages(["https://other-site.com/page"])
+
+    assert len(results) == 1
+    assert isinstance(results[0], ValueError)
+    assert "URL must belong to community" in str(results[0])
+
+
+async def test_fetch_pages_partial_failure(client: IglooClient, mocker: MockerFixture):
+    """
+    Test fetching multiple URLs where some fail returns mixed results.
+    
+    Verifies that:
+    - Successful pages return HTML string
+    - Failed pages return Exception
+    - All results are returned
+    """
+    html_content_1 = "<html><body><p>Page 1</p></body></html>"
+    
+    request1 = Request(method="GET", url=f"{BASE_URL}/wiki/page1")
+    request2 = Request(method="GET", url=f"{BASE_URL}/wiki/page2")
+    
+    mock_response_1 = Response(200, content=html_content_1.encode(), request=request1)
+    mock_response_2 = Response(404, content=b"Not Found", request=request2)
+    
+    mocker.patch.object(
+        client._client,
+        "request",
+        side_effect=[mock_response_1, mock_response_2],
+        new_callable=mocker.AsyncMock
+    )
+
+    urls = [
+        f"{BASE_URL}/wiki/page1",
+        f"{BASE_URL}/wiki/page2",
+    ]
+    results = await client.fetch_pages(urls)
+
+    assert len(results) == 2
+    assert results[0] == html_content_1
+    assert not isinstance(results[0], Exception)
+    
+    assert isinstance(results[1], httpx.HTTPStatusError)
+    assert results[1].response.status_code == 404
+
+
+async def test_fetch_pages_all_fail(client: IglooClient, mocker: MockerFixture):
+    """
+    Test fetching multiple URLs where all fail returns all exceptions.
+    
+    Verifies that:
+    - All pages return exceptions
+    - No exceptions are raised from fetch_pages itself
+    """
+    request1 = Request(method="GET", url=f"{BASE_URL}/wiki/page1")
+    request2 = Request(method="GET", url=f"{BASE_URL}/wiki/page2")
+    
+    mock_response_1 = Response(500, content=b"Server Error", request=request1)
+    mock_response_2 = Response(404, content=b"Not Found", request=request2)
+    
+    mocker.patch.object(
+        client._client,
+        "request",
+        side_effect=[mock_response_1, mock_response_2],
+        new_callable=mocker.AsyncMock
+    )
+
+    urls = [
+        f"{BASE_URL}/wiki/page1",
+        f"{BASE_URL}/wiki/page2",
+    ]
+    results = await client.fetch_pages(urls)
+
+    assert len(results) == 2
+    assert isinstance(results[0], httpx.HTTPStatusError)
+    assert results[0].response.status_code == 500
+    assert isinstance(results[1], httpx.HTTPStatusError)
+    assert results[1].response.status_code == 404
+
+
+async def test_fetch_pages_timeout(client: IglooClient, mocker: MockerFixture):
+    """
+    Test fetching with timeout returns TimeoutException for timed out page.
+    
+    Verifies that:
+    - Timeout errors are captured as TimeoutException
+    - Other pages are not affected
+    """
+    html_content_1 = "<html><body><p>Page 1</p></body></html>"
+    request1 = Request(method="GET", url=f"{BASE_URL}/wiki/page1")
+    mock_response_1 = Response(200, content=html_content_1.encode(), request=request1)
+    
+    mocker.patch.object(
+        client._client,
+        "request",
+        side_effect=[mock_response_1, httpx.TimeoutException("Request timeout")],
+        new_callable=mocker.AsyncMock
+    )
+
+    urls = [
+        f"{BASE_URL}/wiki/page1",
+        f"{BASE_URL}/wiki/slow-page",
+    ]
+    results = await client.fetch_pages(urls)
+
+    assert len(results) == 2
+    assert results[0] == html_content_1
+    assert isinstance(results[1], httpx.TimeoutException)
+
+
+async def test_fetch_pages_mixed_valid_invalid_urls(client: IglooClient, mocker: MockerFixture):
+    """
+    Test fetching mix of valid and invalid community URLs.
+    
+    Verifies that:
+    - Valid URLs are fetched and return HTML
+    - Invalid URLs return ValueError exception without HTTP request
+    """
+    html_content = "<html><body><p>Valid Page</p></body></html>"
+    request = Request(method="GET", url=f"{BASE_URL}/wiki/valid")
+    mock_response = Response(200, content=html_content.encode(), request=request)
+    
+    mocker.patch.object(
+        client._client,
+        "request",
+        return_value=mock_response,
+        new_callable=mocker.AsyncMock
+    )
+
+    urls = [
+        f"{BASE_URL}/wiki/valid",
+        "https://evil.com/phishing",
+    ]
+    results = await client.fetch_pages(urls)
+
+    assert len(results) == 2
+    assert results[0] == html_content
+    assert isinstance(results[1], ValueError)
+    assert "URL must belong to community" in str(results[1])
+
+
+# ============================================================================
+# Client Initialization Tests
+# ============================================================================
+
+
+class TestIglooClientInitialization:
+    """Tests for IglooClient initialization with various parameters."""
+
+    async def test_client_with_proxy(self):
+        """
+        Test IglooClient initialization with proxy parameter.
+        
+        Verifies that:
+        - Client can be created with proxy configuration
+        - Proxy URL is passed to underlying httpx client
+        """
+        client = IglooClient(
+            community="https://test.com",
+            app_id="test_app_id",
+            app_pass="test_app_pass",
+            community_key="12345",
+            username="test_user",
+            password="test_password",
+            proxy="http://proxy.example.com:8080",
+        )
+        try:
+            # Verify the client was created with the proxy
+            # The proxy is set during client creation and affects requests
+            assert client._client is not None
+        finally:
+            await client._client.aclose()
+
+    async def test_client_with_verify_ssl_false(self):
+        """
+        Test IglooClient initialization with verify_ssl=False.
+        
+        Verifies that:
+        - Client can be created with SSL verification disabled
+        - Setting is passed to underlying httpx client
+        """
+        client = IglooClient(
+            community="https://test.com",
+            app_id="test_app_id",
+            app_pass="test_app_pass",
+            community_key="12345",
+            username="test_user",
+            password="test_password",
+            verify_ssl=False,
+        )
+        try:
+            # Verify the client was created with verify=False
+            assert client._client is not None
+        finally:
+            await client._client.aclose()
+
+    async def test_client_with_verify_ssl_true_default(self):
+        """
+        Test IglooClient uses verify_ssl=True by default.
+        
+        Verifies that:
+        - SSL verification is enabled by default
+        """
+        client = IglooClient(
+            community="https://test.com",
+            app_id="test_app_id",
+            app_pass="test_app_pass",
+            community_key="12345",
+            username="test_user",
+            password="test_password",
+        )
+        try:
+            # Default should have SSL verification enabled
+            assert client._client is not None
+        finally:
+            await client._client.aclose()
+
+    async def test_client_with_proxy_and_verify_ssl_false(self):
+        """
+        Test IglooClient with both proxy and verify_ssl=False.
+        
+        Verifies that:
+        - Client can be configured with both proxy and SSL verification disabled
+        - Common scenario for corporate proxies with self-signed certificates
+        """
+        client = IglooClient(
+            community="https://test.com",
+            app_id="test_app_id",
+            app_pass="test_app_pass",
+            community_key="12345",
+            username="test_user",
+            password="test_password",
+            proxy="http://proxy.example.com:8080",
+            verify_ssl=False,
+        )
+        try:
+            assert client._client is not None
+        finally:
+            await client._client.aclose()
+
+    async def test_client_strips_trailing_slash_from_community(self):
+        """
+        Test that trailing slash is removed from community URL.
+        
+        Verifies that:
+        - Trailing slashes are stripped during initialization
+        - URLs are normalized for consistent behavior
+        """
+        client = IglooClient(
+            community="https://test.com/",
+            app_id="test_app_id",
+            app_pass="test_app_pass",
+            community_key="12345",
+            username="test_user",
+            password="test_password",
+        )
+        try:
+            assert client.community == "https://test.com"
+        finally:
+            await client._client.aclose()
+
+    async def test_client_custom_page_size(self):
+        """
+        Test IglooClient initialization with custom page_size.
+        
+        Verifies that:
+        - Custom page size is stored correctly
+        """
+        client = IglooClient(
+            community="https://test.com",
+            app_id="test_app_id",
+            app_pass="test_app_pass",
+            community_key="12345",
+            username="test_user",
+            password="test_password",
+            page_size=100,
+        )
+        try:
+            assert client.page_size == 100
+        finally:
+            await client._client.aclose()
+
+
+# ============================================================================
+# URL Validation Tests
+# ============================================================================
+
+
+class TestUrlValidation:
+    """Tests for URL validation in IglooClient."""
+
+    async def test_fetch_page_with_fragment_identifier(self, mocker: MockerFixture):
+        """
+        Test fetch handles URLs with fragment identifiers (#section).
+        
+        Verifies that:
+        - URLs with fragments are accepted as valid community URLs
+        - Fragment is preserved in the request
+        """
+        client = IglooClient(
+            community=BASE_URL,
+            app_id="test_app_id",
+            app_pass="test_app_pass",
+            community_key=COMMUNITY_KEY,
+            username="test_user",
+            password="test_password",
+        )
+        try:
+            html_content = "<html><body>Content</body></html>"
+            url = f"{BASE_URL}/wiki/page#section-2"
+            request = Request(method="GET", url=url)
+            mock_response = Response(200, content=html_content.encode(), request=request)
+            mocker.patch.object(
+                client._client, "request", return_value=mock_response, new_callable=mocker.AsyncMock
+            )
+
+            result = await client.fetch_page(url)
+
+            assert result == html_content
+        finally:
+            await client._client.aclose()
+
+    async def test_url_validation_exact_match_community(self):
+        """
+        Test URL validation with exact community URL (no path).
+        
+        Verifies that:
+        - The exact community URL is valid
+        """
+        client = IglooClient(
+            community=BASE_URL,
+            app_id="test_app_id",
+            app_pass="test_app_pass",
+            community_key=COMMUNITY_KEY,
+            username="test_user",
+            password="test_password",
+        )
+        try:
+            # Should not raise - exact community URL should be valid
+            client._validate_community_url(BASE_URL)
+        finally:
+            await client._client.aclose()
+
+    async def test_url_validation_with_query_string_only(self):
+        """
+        Test URL validation with community URL + query string (no path).
+        
+        Verifies that:
+        - Community URL with only query params is valid
+        """
+        client = IglooClient(
+            community=BASE_URL,
+            app_id="test_app_id",
+            app_pass="test_app_pass",
+            community_key=COMMUNITY_KEY,
+            username="test_user",
+            password="test_password",
+        )
+        try:
+            # Should not raise - URL with query params after community base
+            client._validate_community_url(f"{BASE_URL}?param=value")
+        finally:
+            await client._client.aclose()
+
+    async def test_url_validation_rejects_http_when_community_is_https(self):
+        """
+        Test URL validation rejects HTTP URLs when community uses HTTPS.
+        
+        Verifies that:
+        - Protocol mismatch is correctly rejected
+        - Security check prevents downgrade attacks
+        """
+        client = IglooClient(
+            community="https://secure.example.com",
+            app_id="test_app_id",
+            app_pass="test_app_pass",
+            community_key=COMMUNITY_KEY,
+            username="test_user",
+            password="test_password",
+        )
+        try:
+            with pytest.raises(ValueError, match="URL must belong to community"):
+                client._validate_community_url("http://secure.example.com/page")
+        finally:
+            await client._client.aclose()
+
+    async def test_url_validation_rejects_different_port(self):
+        """
+        Test URL validation rejects URLs with different ports.
+        
+        Verifies that:
+        - Port mismatch is correctly rejected
+        """
+        client = IglooClient(
+            community="https://example.com:443",
+            app_id="test_app_id",
+            app_pass="test_app_pass",
+            community_key=COMMUNITY_KEY,
+            username="test_user",
+            password="test_password",
+        )
+        try:
+            with pytest.raises(ValueError, match="URL must belong to community"):
+                client._validate_community_url("https://example.com:8080/page")
+        finally:
+            await client._client.aclose()

@@ -80,3 +80,21 @@ class Config(BaseSettings):
         default="Use this server to search and retrieve information from an Igloo instance.",
         description="Instructions that describe the server's purpose and capabilities. These are displayed to MCP clients and can reference your custom Igloo instance name.",
     )
+    fetch_max_length: int = Field(
+        default=50000,
+        ge=1000,
+        le=500000,
+        description="Maximum length of Markdown content returned by the fetch tool. Content exceeding this limit will be truncated.",
+    )
+    fetch_timeout: float = Field(
+        default=15.0,
+        ge=5.0,
+        le=120.0,
+        description="Timeout in seconds for fetch requests.",
+    )
+    fetch_max_pages: int = Field(
+        default=5,
+        ge=1,
+        le=20,
+        description="Maximum number of pages that can be fetched in a single multi-URL request.",
+    )

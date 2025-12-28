@@ -7,6 +7,7 @@ An MCP (Model Context Protocol) server that provides AI assistants with search c
 - Full-text search across Igloo communities
 - Filter by application types, date ranges, archived content, and parent paths
 - Sort results by views or relevance
+- Fetch and convert pages to Markdown (single or multiple URLs)
 - Customizable server identity
 
 ## Prerequisites
@@ -85,6 +86,9 @@ IGLOO_MCP_DEFAULT_LIMIT=20
 - `IGLOO_MCP_DEFAULT_LIMIT` (default: 20) - Default max search results
 - `IGLOO_MCP_PROXY` - Optional proxy URL
 - `IGLOO_MCP_VERIFY_SSL` (default: true) - Verify SSL certificates
+- `IGLOO_MCP_FETCH_MAX_LENGTH` (default: 50000) - Maximum Markdown content length per page (1000-500000)
+- `IGLOO_MCP_FETCH_TIMEOUT` (default: 15.0) - Timeout in seconds for fetch requests (5.0-120.0)
+- `IGLOO_MCP_FETCH_MAX_PAGES` (default: 5) - Maximum number of URLs per multi-URL fetch request (1-20)
 
 ### Transport Options
 
@@ -104,7 +108,33 @@ Search for content in the Igloo community with extensive filtering options.
 - `updated_date_type`: Filter by date (past_hour, past_24_hours, past_week, past_month, past_year, custom_range)
 - `include_archived`: Include archived content (default: false)
 
-See the tool's schema for all available parameters.
+
+### fetch
+
+Fetch one or more pages from the Igloo community and convert to Markdown for LLM consumption.
+
+**Parameters:**
+- `url`: A single URL string or a list of URLs to fetch
+- `max_length`: Maximum Markdown content length per page (optional, uses config default)
+- `start_index`: Character offset to start reading from (optional). Use the `next_start_index` value from a previous truncated response to continue reading. Cannot be used with `section`. Ignored for multi-URL requests.
+- `section`: Name of section to jump to, e.g., "API Reference" (optional). Case-insensitive, fuzzy matches Markdown headers. Cannot be used with `start_index`. Ignored for multi-URL requests.
+
+**Smart Truncation:**
+
+When content exceeds `max_length`, the response is truncated at semantic boundaries (paragraphs, sentences) rather than mid-sentence. Truncated responses include navigation metadata:
+- Total document size and percentage shown
+- List of remaining sections
+- A `CONTINUE` hint with the exact `next_start_index` cursor for seamless continuation
+
+**Example Workflow:**
+
+```
+1. Agent: fetch(url="https://igloo.example.com/wiki/deployment")
+   Response: [content] + "CONTINUE: fetch(url="...", start_index=49801)"
+
+2. Agent continues: fetch(url="...", start_index=49801)
+   OR jumps to section: fetch(url="...", section="Troubleshooting")
+```
 
 ## Development
 

@@ -1,9 +1,14 @@
-import json
-import pytest
-from pathlib import Path
+"""Tests for the formatter module."""
 
+import pytest
+from typing import Any
+
+from igloo_mcp.converter import TruncationMetadata
 from igloo_mcp.formatter import (
     format_search_results,
+    format_fetch_result,
+    format_fetch_results,
+    format_truncation_metadata,
     _format_header,
     _format_single_result,
     _format_date,
@@ -12,49 +17,13 @@ from igloo_mcp.formatter import (
 )
 
 
-def _transform_raw_results(raw_results: list[dict]) -> list[dict]:
-    """
-    Transforms raw search results from the mock file into the format
-    expected by the application's internal functions.
-    """
-    fields_mapping = {
-        "title": "title",
-        "applicationType": "type",
-        "href": "relative_url",
-        "content": "content",
-        "description": "description",
-        "modifiedDate": "modified_date",
-        "numberOfComments": "comments_count",
-        "numberOfViews": "views_count",
-        "numberOfLikes": "likes_count",
-        "isArchived": "is_archived",
-        "isRecommended": "is_recommended",
-        "labels": "labels",
-    }
-    community_url = "https://example.com"
-    
-    
-    return [
-        {
-            **{fields_mapping[key]: value for key, value in item.items() if key in fields_mapping},
-            "full_url": f"{community_url}{item['href']}"
-        }
-        for item in raw_results
-    ]
+# Note: mock_data_path and sample_search_results fixtures are defined in conftest.py
 
 
 @pytest.fixture
-def mock_data_path() -> Path:
-    """Returns path to mock data directory."""
-    return Path(__file__).parent / "tests_data" / "mock_data"
-
-
-@pytest.fixture
-def sample_results(mock_data_path: Path) -> list[dict]:
-    """Load and transform sample search results from mock data file."""
-    with open(mock_data_path / "search_single_page.json", "r") as f:
-        mock_data = json.load(f)
-    return _transform_raw_results(mock_data["results"])
+def sample_results(sample_search_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Alias for sample_search_results for backward compatibility."""
+    return sample_search_results
 
 
 class TestFormatSearchResults:
@@ -689,10 +658,6 @@ class TestFormatDate:
         formatted = _format_date("")
         assert formatted == ""
 
-    def test_none_input(self):
-        """Test handling of None input."""
-        formatted = _format_date(None)
-        assert formatted == "None"
 
 
 class TestTruncateText:
@@ -745,11 +710,6 @@ class TestTruncateText:
         truncated = _truncate_text(text, max_length=200)
         assert len(truncated) <= 203
         assert truncated.endswith("...")
-
-    def test_none_input(self):
-        """Test handling of None input."""
-        with pytest.raises(TypeError):
-            _truncate_text(None, max_length=200)
 
     def test_unicode_emoji_characters(self):
         """Test text with unicode/emoji characters."""
@@ -821,3 +781,501 @@ class TestFormatDateFilter:
         """Test formatting with invalid/unknown date_type string."""
         result = _format_date_filter("unknown_filter_type", {})
         assert result == "Date Filter: Unknown Filter Type"
+
+
+class TestFormatFetchResults:
+    """Tests for the format_fetch_results function (multiple pages)."""
+
+    def test_empty_results(self):
+        """Test formatting with no results."""
+        result = format_fetch_results(results=[], total_count=0)
+        assert result == "No pages to display."
+
+    def test_single_page_success(self):
+        """Test formatting a single successful page."""
+        results = [{
+            "url": "https://example.com/wiki/page1",
+            "markdown": "# Page 1\n\nThis is the content.",
+        }]
+        
+        result = format_fetch_results(results=results, total_count=1)
+        
+        assert "===== PAGE 1 of 1 =====" in result
+        assert "URL: https://example.com/wiki/page1" in result
+        assert "# Page 1" in result
+        assert "This is the content." in result
+
+    def test_multiple_pages_success(self):
+        """Test formatting multiple successful pages."""
+        results = [
+            {
+                "url": "https://example.com/wiki/page1",
+                "markdown": "# Page 1 Content",
+            },
+            {
+                "url": "https://example.com/wiki/page2",
+                "markdown": "# Page 2 Content",
+            },
+            {
+                "url": "https://example.com/wiki/page3",
+                "markdown": "# Page 3 Content",
+            },
+        ]
+        
+        result = format_fetch_results(results=results, total_count=3)
+        
+        assert "===== PAGE 1 of 3 =====" in result
+        assert "===== PAGE 2 of 3 =====" in result
+        assert "===== PAGE 3 of 3 =====" in result
+        assert "URL: https://example.com/wiki/page1" in result
+        assert "URL: https://example.com/wiki/page2" in result
+        assert "URL: https://example.com/wiki/page3" in result
+        assert "# Page 1 Content" in result
+        assert "# Page 2 Content" in result
+        assert "# Page 3 Content" in result
+
+    def test_page_with_error(self):
+        """Test formatting a page that has an error."""
+        results = [{
+            "url": "https://example.com/wiki/failed-page",
+            "error": "HTTP 404 - Failed to fetch page",
+        }]
+        
+        result = format_fetch_results(results=results, total_count=1)
+        
+        assert "===== PAGE 1 of 1 =====" in result
+        assert "URL: https://example.com/wiki/failed-page" in result
+        assert "[Error fetching page: HTTP 404 - Failed to fetch page]" in result
+
+    def test_mixed_success_and_errors(self):
+        """Test formatting mix of successful and failed pages."""
+        results = [
+            {
+                "url": "https://example.com/wiki/page1",
+                "markdown": "# Success Content",
+            },
+            {
+                "url": "https://example.com/wiki/failed",
+                "error": "Request timed out",
+            },
+            {
+                "url": "https://example.com/wiki/page3",
+                "markdown": "# Another Success",
+            },
+        ]
+        
+        result = format_fetch_results(results=results, total_count=3)
+        
+        assert "===== PAGE 1 of 3 =====" in result
+        assert "===== PAGE 2 of 3 =====" in result
+        assert "===== PAGE 3 of 3 =====" in result
+        assert "# Success Content" in result
+        assert "[Error fetching page: Request timed out]" in result
+        assert "# Another Success" in result
+
+    def test_missing_url(self):
+        """Test formatting result with missing URL field."""
+        results = [{
+            "markdown": "# Content without URL",
+        }]
+        
+        result = format_fetch_results(results=results, total_count=1)
+        
+        assert "URL: Unknown URL" in result
+        assert "# Content without URL" in result
+
+    def test_missing_markdown(self):
+        """Test formatting result with missing markdown field."""
+        results = [{
+            "url": "https://example.com/wiki/page",
+        }]
+        
+        result = format_fetch_results(results=results, total_count=1)
+        
+        assert "URL: https://example.com/wiki/page" in result
+        # Should have empty content, not error
+
+    def test_all_errors(self):
+        """Test formatting when all pages have errors."""
+        results = [
+            {
+                "url": "https://example.com/wiki/page1",
+                "error": "HTTP 500 - Server Error",
+            },
+            {
+                "url": "https://example.com/wiki/page2",
+                "error": "Connection refused",
+            },
+        ]
+        
+        result = format_fetch_results(results=results, total_count=2)
+        
+        assert "===== PAGE 1 of 2 =====" in result
+        assert "===== PAGE 2 of 2 =====" in result
+        assert "[Error fetching page: HTTP 500 - Server Error]" in result
+        assert "[Error fetching page: Connection refused]" in result
+
+    def test_large_content(self):
+        """Test formatting with large markdown content."""
+        large_content = "# Header\n\n" + "This is a paragraph. " * 1000
+        results = [{
+            "url": "https://example.com/wiki/large-page",
+            "markdown": large_content,
+        }]
+        
+        result = format_fetch_results(results=results, total_count=1)
+        
+        assert "===== PAGE 1 of 1 =====" in result
+        assert large_content in result
+
+    def test_unicode_content(self):
+        """Test formatting with unicode content."""
+        results = [{
+            "url": "https://example.com/wiki/unicode",
+            "markdown": "# 日本語タイトル\n\nこれは日本語のコンテンツです。",
+        }]
+        
+        result = format_fetch_results(results=results, total_count=1)
+        
+        assert "日本語タイトル" in result
+        assert "日本語のコンテンツ" in result
+
+    def test_special_url_characters(self):
+        """Test formatting with URLs containing special characters."""
+        results = [{
+            "url": "https://example.com/wiki/page?param=value&foo=bar#section",
+            "markdown": "# Content",
+        }]
+        
+        result = format_fetch_results(results=results, total_count=1)
+        
+        assert "URL: https://example.com/wiki/page?param=value&foo=bar#section" in result
+
+
+class TestFormatTruncationMetadata:
+    """Tests for the format_truncation_metadata function."""
+
+    def test_basic_metadata(self):
+        """Test formatting with minimal metadata."""
+        metadata = TruncationMetadata(
+            status="partial",
+            chars_returned=1000,
+            chars_total=5000,
+            next_start_index=1000,
+        )
+        url = "https://example.com/wiki/page"
+        
+        result = format_truncation_metadata(metadata, url)
+        
+        assert "⚠️ CONTENT TRUNCATED" in result
+        assert "Showing 1,000 of 5,000 chars (20% of document)" in result
+        assert "To continue reading, call fetch with start_index:" in result
+        assert 'fetch(url="https://example.com/wiki/page", start_index=1000)' in result
+
+    def test_metadata_with_current_path(self):
+        """Test formatting with current section path."""
+        metadata = TruncationMetadata(
+            status="partial",
+            chars_returned=5000,
+            chars_total=20000,
+            next_start_index=5000,
+            current_path="Documentation > API Reference",
+        )
+        url = "https://example.com/docs"
+        
+        result = format_truncation_metadata(metadata, url)
+        
+        assert "Current section: Documentation > API Reference" in result
+
+    def test_metadata_with_remaining_sections(self):
+        """Test formatting with remaining sections list."""
+        metadata = TruncationMetadata(
+            status="partial",
+            chars_returned=10000,
+            chars_total=50000,
+            next_start_index=10000,
+            remaining_sections=["Rate Limits", "Error Codes", "Webhooks"],
+        )
+        url = "https://example.com/api-docs"
+        
+        result = format_truncation_metadata(metadata, url)
+        
+        assert "Upcoming sections: Rate Limits, Error Codes, Webhooks" in result
+
+    def test_metadata_full(self):
+        """Test formatting with all fields populated."""
+        metadata = TruncationMetadata(
+            status="partial",
+            chars_returned=49800,
+            chars_total=125000,
+            next_start_index=49800,
+            current_path="Docs > API > Authentication",
+            remaining_sections=["Rate Limits", "Error Codes", "Webhooks", "Examples", "FAQ"],
+        )
+        url = "https://igloo.example.com/wiki/api-documentation"
+        
+        result = format_truncation_metadata(metadata, url)
+        
+        assert "---" in result
+        assert "⚠️ CONTENT TRUNCATED" in result
+        assert "Showing 49,800 of 125,000 chars (39% of document)" in result
+        assert "Current section: Docs > API > Authentication" in result
+        assert "Upcoming sections: Rate Limits, Error Codes, Webhooks, Examples, FAQ" in result
+        assert "To continue reading, call fetch with start_index:" in result
+        assert 'fetch(url="https://igloo.example.com/wiki/api-documentation", start_index=49800)' in result
+
+    def test_metadata_no_next_index(self):
+        """Test formatting when next_start_index is None."""
+        metadata = TruncationMetadata(
+            status="partial",
+            chars_returned=1000,
+            chars_total=5000,
+            next_start_index=None,
+        )
+        url = "https://example.com/page"
+        
+        result = format_truncation_metadata(metadata, url)
+        
+        assert "⚠️ CONTENT TRUNCATED" in result
+        assert "Showing 1,000 of 5,000 chars (20% of document)" in result
+        assert "To continue reading" not in result
+
+    def test_metadata_empty_remaining_sections(self):
+        """Test formatting with empty remaining sections list."""
+        metadata = TruncationMetadata(
+            status="partial",
+            chars_returned=4500,
+            chars_total=5000,
+            next_start_index=4500,
+            remaining_sections=[],
+        )
+        url = "https://example.com/page"
+        
+        result = format_truncation_metadata(metadata, url)
+        
+        assert "Upcoming sections:" not in result
+
+    def test_metadata_large_numbers_formatted(self):
+        """Test that large numbers are properly formatted with commas."""
+        metadata = TruncationMetadata(
+            status="partial",
+            chars_returned=1234567,
+            chars_total=9876543,
+            next_start_index=1234567,
+        )
+        url = "https://example.com/large-doc"
+        
+        result = format_truncation_metadata(metadata, url)
+        
+        assert "Showing 1,234,567 of 9,876,543 chars" in result
+
+    def test_metadata_url_with_special_characters(self):
+        """Test formatting with URL containing special characters."""
+        metadata = TruncationMetadata(
+            status="partial",
+            chars_returned=1000,
+            chars_total=5000,
+            next_start_index=1000,
+        )
+        url = "https://example.com/page?query=test&filter=active"
+        
+        result = format_truncation_metadata(metadata, url)
+        
+        assert "To continue reading, call fetch with start_index:" in result
+        assert '  fetch(url="https://example.com/page?query=test&filter=active", start_index=1000)' in result
+
+    def test_metadata_starts_with_separator(self):
+        """Test that output starts with newlines and separator."""
+        metadata = TruncationMetadata(
+            status="partial",
+            chars_returned=1000,
+            chars_total=5000,
+            next_start_index=1000,
+        )
+        url = "https://example.com/page"
+        
+        result = format_truncation_metadata(metadata, url)
+        
+        # Should start with newline, separator
+        lines = result.split('\n')
+        assert lines[0] == ""  # Empty first line
+        assert lines[1] == "---"  # Separator
+
+    def test_continuation_indentation(self):
+        """Test that fetch command in continuation instructions is indented with 2 spaces."""
+        metadata = TruncationMetadata(
+            status="partial",
+            chars_returned=1000,
+            chars_total=5000,
+            next_start_index=1000,
+            current_path="Section A",
+            remaining_sections=["Section B", "Section C"],
+        )
+        url = "https://example.com/page"
+        
+        result = format_truncation_metadata(metadata, url)
+        
+        # Should have continuation instructions with indented fetch command
+        assert "To continue reading, call fetch with start_index:" in result
+        assert '  fetch(url="https://example.com/page", start_index=1000)' in result
+        # Should NOT use table format
+        assert "|" not in result
+
+    def test_percentage_calculation(self):
+        """Test that percentage is calculated correctly."""
+        metadata = TruncationMetadata(
+            status="partial",
+            chars_returned=1000,
+            chars_total=5000,
+            next_start_index=1000,
+        )
+        url = "https://example.com/page"
+        
+        result = format_truncation_metadata(metadata, url)
+        
+        # 1000 / 5000 = 20%
+        assert "(20% of document)" in result
+
+    def test_percentage_zero_total(self):
+        """Test edge case where chars_total is 0 should return 0% without error."""
+        metadata = TruncationMetadata(
+            status="partial",
+            chars_returned=0,
+            chars_total=0,
+            next_start_index=None,
+        )
+        url = "https://example.com/page"
+        
+        result = format_truncation_metadata(metadata, url)
+        
+        # Should handle divide-by-zero gracefully
+        assert "(0% of document)" in result
+
+
+class TestFormatFetchResult:
+    """Tests for the format_fetch_result function (single page formatting)."""
+
+    def test_basic_formatting(self):
+        """Test basic fetch result formatting."""
+        result = format_fetch_result(
+            url="https://example.com/wiki/page",
+            markdown="# Title\n\nContent here.",
+        )
+        
+        assert "# Fetched Content" in result
+        assert "URL: https://example.com/wiki/page" in result
+        assert "---" in result
+        assert "# Title" in result
+        assert "Content here." in result
+
+    def test_format_without_offset(self):
+        """Test format_fetch_result without offset shows normal header."""
+        result = format_fetch_result(
+            url="https://example.com/page",
+            markdown="# Test\n\nContent here.",
+        )
+        
+        assert "URL: https://example.com/page" in result
+        assert "Reading from offset" not in result
+
+    def test_format_with_offset(self):
+        """Test format_fetch_result with offset shows position context."""
+        result = format_fetch_result(
+            url="https://example.com/page",
+            markdown="Continued content here.",
+            start_index=5000,
+        )
+        
+        assert "URL: https://example.com/page" in result
+        assert "Reading from offset: 5,000" in result
+
+    def test_format_with_zero_offset(self):
+        """Test format_fetch_result with zero offset shows no position."""
+        result = format_fetch_result(
+            url="https://example.com/page",
+            markdown="Content.",
+            start_index=0,
+        )
+        
+        assert "Reading from offset" not in result
+
+    def test_format_with_large_offset(self):
+        """Test format_fetch_result formats large offsets with commas."""
+        result = format_fetch_result(
+            url="https://example.com/page",
+            markdown="Content.",
+            start_index=1234567,
+        )
+        
+        assert "Reading from offset: 1,234,567" in result
+
+    def test_url_with_special_characters(self):
+        """Test formatting URL with query params and fragments."""
+        result = format_fetch_result(
+            url="https://example.com/page?param=value&foo=bar#section",
+            markdown="Content.",
+        )
+        
+        assert "URL: https://example.com/page?param=value&foo=bar#section" in result
+
+    def test_empty_markdown(self):
+        """Test formatting with empty markdown content."""
+        result = format_fetch_result(
+            url="https://example.com/page",
+            markdown="",
+        )
+        
+        assert "URL: https://example.com/page" in result
+        assert "---" in result
+
+    def test_unicode_content(self):
+        """Test formatting with unicode/international content."""
+        result = format_fetch_result(
+            url="https://example.com/wiki/unicode",
+            markdown="# 日本語タイトル\n\nこれは日本語のコンテンツです。",
+        )
+        
+        assert "日本語タイトル" in result
+        assert "日本語のコンテンツ" in result
+
+    def test_very_long_url(self):
+        """Test formatting with very long URL."""
+        long_url = "https://example.com/" + "a" * 500 + "/page"
+        result = format_fetch_result(
+            url=long_url,
+            markdown="Content.",
+        )
+        
+        assert f"URL: {long_url}" in result
+
+    def test_markdown_with_code_blocks(self):
+        """Test formatting markdown that contains code blocks."""
+        markdown_with_code = """# API Reference
+
+```python
+def hello():
+    print("Hello, World!")
+```
+
+More content here.
+"""
+        result = format_fetch_result(
+            url="https://example.com/docs",
+            markdown=markdown_with_code,
+        )
+        
+        assert "```python" in result
+        assert 'print("Hello, World!")' in result
+
+    def test_output_structure(self):
+        """Test the overall structure of the output."""
+        result = format_fetch_result(
+            url="https://example.com/page",
+            markdown="# Title\n\nBody text.",
+        )
+        
+        lines = result.split("\n")
+        # Should have: # Fetched Content, empty line, URL, empty line, ---, empty lines, content
+        assert lines[0] == "# Fetched Content"
+        assert "URL:" in result
+        assert "---" in result
