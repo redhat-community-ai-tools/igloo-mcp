@@ -5,13 +5,28 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python Debugger: Run Igloo MCP Server",
+            "name": "Python Debugger: Run Igloo MCP Server (HTTP)",
             "type": "debugpy",
             "request": "launch",
             "module": "igloo_mcp.main",
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
-            "envFile": "${workspaceFolder}/.env"
+            "envFile": "${workspaceFolder}/.env",
+            "env": {
+                "IGLOO_MCP_TRANSPORT": "streamable-http"
+            }
+        },
+        {
+            "name": "Python Debugger: Run Igloo MCP Server (stdio)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "igloo_mcp.main",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "envFile": "${workspaceFolder}/.env",
+            "env": {
+                "IGLOO_MCP_TRANSPORT": "stdio"
+            }
         },
         {
             "name": "Python Debugger: Run Test Client",
