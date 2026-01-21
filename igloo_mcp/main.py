@@ -6,10 +6,22 @@ from typing import AsyncIterator, Literal
 import httpx
 from mcp.server.fastmcp import Context, FastMCP
 from mcp.server.session import ServerSession
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 
 from igloo_mcp.config import Config
-from igloo_mcp.converter import convert_html_to_markdown, OffsetError, SectionNotFoundError, extract_section
-from igloo_mcp.formatter import format_search_results, format_fetch_result, format_fetch_results, format_truncation_metadata
+from igloo_mcp.converter import (
+    convert_html_to_markdown,
+    OffsetError,
+    SectionNotFoundError,
+    extract_section,
+)
+from igloo_mcp.formatter import (
+    format_search_results,
+    format_fetch_result,
+    format_fetch_results,
+    format_truncation_metadata,
+)
 from igloo_mcp.igloo import ApplicationType, IglooClient, UpdatedDateType
 from igloo_mcp.logger import logger, configure_logger
 from igloo_mcp.sorting import SortType, sort_results
@@ -18,11 +30,13 @@ from igloo_mcp.sorting import SortType, sort_results
 @dataclass
 class AppContext:
     """Application context that's shared across all tools."""
+
     igloo_client: IglooClient
     config: Config
 
 
 _config = Config()
+
 
 @asynccontextmanager
 async def lifespan(mcp: FastMCP) -> AsyncIterator[AppContext]:
@@ -48,13 +62,15 @@ async def lifespan(mcp: FastMCP) -> AsyncIterator[AppContext]:
 
     try:
         await client.authenticate()
-        logger.info(f"Successfully authenticated with Igloo community: {_config.community}")
+        logger.info(
+            f"Successfully authenticated with Igloo community: {_config.community}"
+        )
         yield AppContext(igloo_client=client, config=_config)
- 
+
     except Exception:
         logger.exception("Failed to authenticate with Igloo on startup")
         raise
- 
+
     finally:
         await client._client.aclose()
         logger.info("Igloo client connection closed.")
@@ -64,19 +80,48 @@ mcp = FastMCP(
     name=_config.server_name,
     instructions=_config.server_instructions,
     lifespan=lifespan,
+    host=_config.host,
 )
+
+
+@mcp.custom_route("/health", methods=["GET"])
+async def health_check(request: Request) -> JSONResponse:
+    """Health check endpoint for container orchestration."""
+    return JSONResponse({"status": "healthy"})
 
 
 @mcp.tool(name="search")
 async def search_tool(
     ctx: Context[ServerSession, AppContext],
     query: str | None = None,
-    applications: list[Literal["blog", "wiki", "document", "forum", "gallery", "calendar", "pages", "people", "space", "microblog"]] | None = None,
+    applications: list[
+        Literal[
+            "blog",
+            "wiki",
+            "document",
+            "forum",
+            "gallery",
+            "calendar",
+            "pages",
+            "people",
+            "space",
+            "microblog",
+        ]
+    ]
+    | None = None,
     parent_href: str | None = None,
     search_all: bool = True,
     include_microblog: bool = True,
     include_archived: bool = False,
-    updated_date_type: Literal["past_hour", "past_24_hours", "past_week", "past_month", "past_year", "custom_range"] | None = None,
+    updated_date_type: Literal[
+        "past_hour",
+        "past_24_hours",
+        "past_week",
+        "past_month",
+        "past_year",
+        "custom_range",
+    ]
+    | None = None,
     updated_date_range_from: date | None = None,
     updated_date_range_to: date | None = None,
     pagination_page_size: int | None = None,
@@ -113,7 +158,9 @@ async def search_tool(
     """
     formatted_applications = None
     if applications:
-        formatted_applications = [ApplicationType[app_type.upper()] for app_type in applications]
+        formatted_applications = [
+            ApplicationType[app_type.upper()] for app_type in applications
+        ]
 
     formatted_updated_date_type = None
     if updated_date_type:
@@ -157,8 +204,12 @@ async def search_tool(
 
     output_results = [
         {
-            **{fields_mapping[key]: value for key, value in item.items() if key in fields_mapping},
-            "full_url": f"{config.community}{item['href']}"
+            **{
+                fields_mapping[key]: value
+                for key, value in item.items()
+                if key in fields_mapping
+            },
+            "full_url": f"{config.community}{item['href']}",
         }
         for item in raw_results
     ]
@@ -240,14 +291,14 @@ async def fetch_tool(
     client = ctx.request_context.lifespan_context.igloo_client
     config = ctx.request_context.lifespan_context.config
 
-    effective_max_length = max_length if max_length is not None else config.fetch_max_length
+    effective_max_length = (
+        max_length if max_length is not None else config.fetch_max_length
+    )
 
-    # Handle single URL case (supports start_index and section for navigation)
     if isinstance(url, str):
-        # Mutual exclusion: section and start_index cannot be used together
         if section is not None and start_index is not None:
             return "Error: Cannot use both 'section' and 'start_index' parameters. Use 'section' to jump to a named section, or 'start_index' for offset-based continuation."
-        
+
         try:
             html_content = await client.fetch_page(url)
         except ValueError as e:
@@ -257,23 +308,19 @@ async def fetch_tool(
         except httpx.TimeoutException:
             return f"Error: Request timed out while fetching {url}"
 
-        # If section is specified, extract that section first
         if section is not None:
-            # First convert to markdown without truncation to extract section
             full_conversion = convert_html_to_markdown(
                 html_string=html_content,
-                max_length=None,  # No truncation yet
+                max_length=None,
             )
-            
+
             try:
                 section_content, section_offset = extract_section(
                     full_conversion.content, section
                 )
             except SectionNotFoundError as e:
                 return f"Error: {e}"
-            
-            # Now apply max_length truncation to the extracted section
-            # We use the section content directly, treating it as standalone content
+
             from igloo_mcp.converter import (
                 find_smart_truncation_point,
                 balance_code_fences,
@@ -283,18 +330,19 @@ async def fetch_tool(
                 TruncationMetadata,
                 ConversionResult,
             )
-            
+
             section_length = len(section_content)
-            if effective_max_length is not None and section_length > effective_max_length:
-                # Apply smart truncation to section content
+            if (
+                effective_max_length is not None
+                and section_length > effective_max_length
+            ):
                 headers = extract_section_headers(section_content)
                 truncation_point = find_smart_truncation_point(
                     section_content, effective_max_length
                 )
                 truncated = section_content[:truncation_point]
                 truncated = balance_code_fences(truncated)
-                
-                # Build metadata - next_start_index is absolute in original document
+
                 next_absolute_index = section_offset + truncation_point
                 metadata = TruncationMetadata(
                     status="partial",
@@ -302,11 +350,14 @@ async def fetch_tool(
                     chars_total=len(full_conversion.content),
                     next_start_index=next_absolute_index,
                     current_path=_get_current_section_path(headers, truncation_point),
-                    remaining_sections=_get_remaining_sections(headers, truncation_point),
+                    remaining_sections=_get_remaining_sections(
+                        headers, truncation_point
+                    ),
                 )
-                conversion_result = ConversionResult(content=truncated, metadata=metadata)
+                conversion_result = ConversionResult(
+                    content=truncated, metadata=metadata
+                )
             else:
-                # Section fits within max_length
                 metadata = TruncationMetadata(
                     status="complete",
                     chars_returned=section_length,
@@ -315,21 +366,21 @@ async def fetch_tool(
                     current_path=None,
                     remaining_sections=[],
                 )
-                conversion_result = ConversionResult(content=section_content, metadata=metadata)
-            
-            # Build output for section mode
+                conversion_result = ConversionResult(
+                    content=section_content, metadata=metadata
+                )
+
             output = format_fetch_result(
                 url=url,
                 markdown=conversion_result.content,
                 start_index=None,
             )
-            
+
             if conversion_result.metadata is not None:
                 output += format_truncation_metadata(conversion_result.metadata, url)
-            
+
             return output
 
-        # Standard path: no section specified
         try:
             conversion_result = convert_html_to_markdown(
                 html_string=html_content,
@@ -339,37 +390,30 @@ async def fetch_tool(
         except OffsetError as e:
             return f"Error: {e}"
 
-        # Build output with optional truncation metadata
         output = format_fetch_result(
             url=url,
             markdown=conversion_result.content,
             start_index=start_index,
         )
-        
-        # Append truncation metadata if content was truncated or if reading from offset
+
         if conversion_result.metadata is not None:
             output += format_truncation_metadata(conversion_result.metadata, url)
-        
+
         return output
 
-    # Handle multiple URLs case
-    urls = url  # Rename for clarity
+    urls = url
 
-    # Check max pages limit
     if len(urls) > config.fetch_max_pages:
         return f"Error: Too many URLs requested ({len(urls)}). Maximum allowed is {config.fetch_max_pages}."
 
     if len(urls) == 0:
         return "Error: No URLs provided."
 
-    # Fetch all pages concurrently
     fetch_results = await client.fetch_pages(urls)
 
-    # Convert HTML to Markdown for each successful fetch
     formatted_results = []
     for page_url, result in zip(urls, fetch_results):
         if isinstance(result, Exception):
-            # Format error message based on exception type
             if isinstance(result, ValueError):
                 error_msg = str(result)
             elif isinstance(result, httpx.HTTPStatusError):
@@ -378,25 +422,30 @@ async def fetch_tool(
                 error_msg = f"Request timed out while fetching {page_url}"
             else:
                 error_msg = f"Unexpected error: {result}"
-            formatted_results.append({
-                "url": page_url,
-                "error": error_msg,
-            })
+            formatted_results.append(
+                {
+                    "url": page_url,
+                    "error": error_msg,
+                }
+            )
         else:
             conversion_result = convert_html_to_markdown(
                 html_string=result,
                 max_length=effective_max_length,
             )
-            
-            # Build markdown with optional truncation metadata
+
             markdown_output = conversion_result.content
             if conversion_result.metadata is not None:
-                markdown_output += format_truncation_metadata(conversion_result.metadata, page_url)
-            
-            formatted_results.append({
-                "url": page_url,
-                "markdown": markdown_output,
-            })
+                markdown_output += format_truncation_metadata(
+                    conversion_result.metadata, page_url
+                )
+
+            formatted_results.append(
+                {
+                    "url": page_url,
+                    "markdown": markdown_output,
+                }
+            )
 
     return format_fetch_results(
         results=formatted_results,

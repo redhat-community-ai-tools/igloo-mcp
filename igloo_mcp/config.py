@@ -9,6 +9,7 @@ class Config(BaseSettings):
 
     Settings can be provided via a .env file, environment variables, or command-line arguments.
     """
+
     model_config = SettingsConfigDict(
         env_prefix="IGLOO_MCP_",
         env_file=".env",
@@ -26,7 +27,7 @@ class Config(BaseSettings):
 
     community: str = Field(
         default=...,
-        description="The base URL of the Igloo community. Example: 'https://iglooe.mysite.com'",
+        description="The base URL of the Igloo community. Example: 'https://igloo.mysite.com'",
     )
     community_key: str = Field(
         default=...,
@@ -43,7 +44,7 @@ class Config(BaseSettings):
     username: str = Field(
         default=...,
         description="The username to authenticate with.",
-        )
+    )
     password: SecretStr = Field(
         default=...,
         description="The password to authenticate with.",
@@ -71,6 +72,10 @@ class Config(BaseSettings):
     transport: Literal["stdio", "streamable-http"] = Field(
         default="stdio",
         description="The MCP transport protocol to use. 'stdio' for standard input/output (default), 'streamable-http' for HTTP server on port 8000.",
+    )
+    host: str = Field(
+        default="127.0.0.1",
+        description="The host address to bind the HTTP server to. Use '0.0.0.0' to listen on all interfaces (required for Docker). Only used when transport is 'streamable-http'.",
     )
     server_name: str = Field(
         default="Igloo",
